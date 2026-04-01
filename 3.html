@@ -33,7 +33,7 @@
             border-radius: 16px;
             font-size: 14px;
             z-index: 1000;
-            text-align: center;
+            text-align: left;
             max-width: 420px;
             margin: 0 auto;
             font-family: monospace;
@@ -41,6 +41,8 @@
             border: 1px solid rgba(255,255,255,0.2);
             transition: all 0.2s ease;
             word-break: break-word;
+            white-space: pre-line;
+            line-height: 1.4;
         }
         .loading {
             position: fixed;
@@ -108,7 +110,7 @@
         // ==================== КОНФИГУРАЦИЯ ====================
         const YANDEX_API_KEY = '0c8158f3-19bb-4894-a380-7a632583d6d4';
         
-        // Токен для чтения (используем рабочий токен)
+        // Токен для чтения
         const AIRTABLE_READ_TOKEN = 'patQti35eE2qFQYKK.fdd589ae9c5b728679a0bdc3f82fc98371601bb5b7b6310a10f4093f4219f8be';
         
         const BASE_ID = 'appSQMpP8Kh4i466S';
@@ -185,10 +187,11 @@
                             id: record.id,
                             coordinates: coordinates,
                             title: fields['Name'] || 'Без названия',
+                            description: fields['Description'] || '',
                             entryDate: fields['Entry Date'] || '',
                             source: fields['Source'] || ''
                         });
-                        console.log(`✅ ${points[points.length-1].title} → [${coordinates[0]}, ${coordinates[1]}]`);
+                        console.log(`✅ ${points[points.length-1].title}`);
                     } else {
                         console.warn(`⚠️ Пропущен: ${fields['Name'] || record.id} (координаты: "${coordinatesRaw}")`);
                     }
@@ -251,9 +254,8 @@
             return { center, zoom };
         }
         
-        // Создание маркера с кастомным поведением
+        // Создание маркера
         function createMarker(point) {
-            // Контейнер маркера
             const container = document.createElement('div');
             container.style.cssText = `
                 display: flex;
@@ -267,9 +269,8 @@
                 transition: transform 0.2s;
             `;
             
-            // Иконка (видеокамера)
             const icon = document.createElement('div');
-            icon.innerHTML = '📹';  // ← эмодзи видеокамеры
+            icon.innerHTML = '📹';
             icon.style.cssText = `
                 font-size: 28px;
                 width: 38px;
@@ -286,13 +287,15 @@
             
             container.appendChild(icon);
             
-            // Форматируем данные для отображения
+            // Форматируем данные
+            const title = point.title;
+            const description = point.description || "—";
             const dateStr = point.entryDate || "—";
             const sourceStr = point.source || "—";
-            const fullInfo = `📌 ${point.title} | 📅 ${dateStr} | 👤 ${sourceStr}`;
-            const shortInfo = `📌 ${point.title}`;
             
-            // При наведении — показываем полную информацию в панели
+            // Три строки: название, описание, дата и источник
+            const fullInfo = `${title}\n${description}\n📅 ${dateStr} | 👤 ${sourceStr}`;
+            
             container.addEventListener('mouseenter', () => {
                 updateInfo(fullInfo);
                 icon.style.border = '3px solid #ff8888';
@@ -300,19 +303,16 @@
                 container.style.transform = 'translate(-50%, -50%) scale(1.05)';
             });
             
-            // При уходе мыши — информация НЕ удаляется, остаётся последняя выбранная
             container.addEventListener('mouseleave', () => {
                 icon.style.border = '2px solid #ff4444';
                 icon.style.transform = 'scale(1)';
                 container.style.transform = 'translate(-50%, -50%) scale(1)';
-                // Информация остаётся в панели — ничего не меняем
             });
             
-            // При клике — обновляем панель (останется) и показываем alert
             container.addEventListener('click', (e) => {
                 e.stopPropagation();
                 updateInfo(fullInfo);
-                alert(`📌 ${point.title}\n📅 Дата: ${dateStr}\n👤 Добавил: ${sourceStr}`);
+                alert(`${title}\n\nОписание: ${description}\n\nДата: ${dateStr}\nИсточник: ${sourceStr}`);
             });
             
             const marker = new ymaps3.YMapMarker(
