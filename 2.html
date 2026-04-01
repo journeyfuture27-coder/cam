@@ -265,6 +265,10 @@
                 if (point.entryDate) {
                     message += `\n Создано: ${point.entryDate}`;
                 }
+                if (point.source) {
+                    message += `\n Создал: ${point.source}`;
+                }
+                
                 alert(message);
                 updateInfo(`📍 ${point.title}`, false);
                 setTimeout(() => {
