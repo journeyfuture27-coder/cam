@@ -256,11 +256,15 @@
                 if (point.objectType) {
                     message += `\n🏷️ Тип: ${point.objectType}`;
                 }
-                if (point.source) {
-                    message += `\n📍 Адрес: ${point.source}`;
+                if (point.address) {
+                    message += `\n📍 Адрес: ${point.address}`;
                 }
                 if (point.description && point.description !== point.address) {
                     message += `\n📝 ${point.description}`;
+                if (point.entrydate) {
+                    message += `\n Создано: ${point.entrydate}`;
+                if (point.source) {
+                    message += `\n Создал: ${point.source}`;    
                 }
                 alert(message);
                 updateInfo(`📍 ${point.title}`, false);
