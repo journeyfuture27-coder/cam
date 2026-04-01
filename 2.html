@@ -178,7 +178,9 @@
                             description: String(description),
                             address: fields['Address'] || '',
                             objectType: fields['Object Type'] || '',
-                            rawData: fields
+                            rawData: fields,
+                            entryDate: fields['Entry Date'] || '',  
+                            source: fields['Source'] || ''        
                         });
                         console.log(`✅ Добавлен объект: ${title} -> [${coordinates[0]}, ${coordinates[1]}]`);
                     } else {
