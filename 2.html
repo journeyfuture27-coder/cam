@@ -262,8 +262,8 @@
                 if (point.description && point.description !== point.address) {
                     message += `\n📝 ${point.description}`;
                 }
-                if (point.entrydate) {
-                    message += `\n Создано: ${point.entrydate}`;
+                if (point.entryDate) {
+                    message += `\n Создано: ${point.entryDate}`;
                 }
                 alert(message);
                 updateInfo(`📍 ${point.title}`, false);
