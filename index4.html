@@ -98,15 +98,17 @@
         }
 
         function drawCone(map, centerLngLat, direction, rangeMeters) {
+            // Удаляем старый конус
             if (currentCone) {
                 try { map.removeChild(currentCone); } catch(e) {}
                 currentCone = null;
             }
             if (!direction || !rangeMeters || rangeMeters <= 0) return;
 
-            const coneAngle = 20;
+            const coneAngle = 20; // половина угла обзора (всего 40°)
             const leftAngle = direction - coneAngle;
             const rightAngle = direction + coneAngle;
+            
             const leftPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], leftAngle, rangeMeters);
             const rightPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], rightAngle, rangeMeters);
 
@@ -130,6 +132,7 @@
             });
             map.addChild(polygon);
             currentCone = polygon;
+            console.log(`🎨 Конус нарисован: направление ${direction}°, дальность ${rangeMeters} м`);
         }
 
         function removeCone(map) {
@@ -254,9 +257,12 @@
                 
                 selectedPoint = point;
                 const zoom = currentMap.zoom;
+                console.log(`🖱️ Клик по ${point.title}, зум: ${zoom}, direction: ${point.direction}, range: ${point.range}`);
+                
                 if (zoom >= 15 && point.direction && point.range && point.range > 0) {
                     drawCone(currentMap, point.coordinates, point.direction, point.range);
                 } else {
+                    console.log('Условия не выполнены для рисования конуса');
                     removeCone(currentMap);
                 }
             });
@@ -322,4 +328,4 @@
         start();
     </script>
 </body>
-</html>
+/html>
