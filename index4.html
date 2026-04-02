@@ -103,16 +103,18 @@
                 try { map.removeChild(currentCone); } catch(e) {}
                 currentCone = null;
             }
+            
             if (!direction || !rangeMeters || rangeMeters <= 0) return;
 
-            const coneAngle = 20; // половина угла обзора (всего 40°)
+            const coneAngle = 20;
             const leftAngle = direction - coneAngle;
             const rightAngle = direction + coneAngle;
             
             const leftPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], leftAngle, rangeMeters);
             const rightPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], rightAngle, rangeMeters);
 
-            const polygonGeometry = {
+            // Геометрия полигона в формате GeoJSON
+            const geometry = {
                 type: 'Polygon',
                 coordinates: [[
                     [centerLngLat[0], centerLngLat[1]],
@@ -122,17 +124,23 @@
                 ]]
             };
 
-            const polygon = new ymaps3.YMapPolygon({
-                geometry: polygonGeometry,
-                style: {
-                    fillColor: 'rgba(255, 50, 50, 0.25)',
-                    strokeColor: '#ff4444',
-                    strokeWidth: 2
-                }
-            });
-            map.addChild(polygon);
-            currentCone = polygon;
-            console.log(`🎨 Конус нарисован: направление ${direction}°, дальность ${rangeMeters} м`);
+            try {
+                // Создаём полигон через YMapFeature
+                const polygon = new ymaps3.YMapFeature({
+                    geometry: geometry,
+                    style: {
+                        fillColor: 'rgba(255, 50, 50, 0.25)',
+                        strokeColor: '#ff4444',
+                        strokeWidth: 2
+                    }
+                });
+                
+                map.addChild(polygon);
+                currentCone = polygon;
+                console.log('Конус нарисован:', { direction, rangeMeters });
+            } catch (error) {
+                console.error('Ошибка рисования конуса:', error);
+            }
         }
 
         function removeCone(map) {
@@ -221,62 +229,51 @@
             return { center, zoom };
         }
 
-function createMarker(point) {
-    const container = document.createElement('div');
-    container.style.cssText = `display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; transform: translate(-50%, -50%); cursor: pointer; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3)); transition: transform 0.2s;`;
-    const icon = document.createElement('div');
-    icon.innerHTML = '📹';
-    icon.style.cssText = `font-size: 28px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 50%; border: 2px solid #ff4444; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.2s;`;
-    container.appendChild(icon);
+        function createMarker(point) {
+            const container = document.createElement('div');
+            container.style.cssText = `display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; transform: translate(-50%, -50%); cursor: pointer; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3)); transition: transform 0.2s;`;
+            const icon = document.createElement('div');
+            icon.innerHTML = '📹';
+            icon.style.cssText = `font-size: 28px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 50%; border: 2px solid #ff4444; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.2s;`;
+            container.appendChild(icon);
 
-    const title = point.title;
-    const description = point.description || "—";
-    const dateStr = point.entryDate || "—";
-    const sourceStr = point.source || "—";
-    const directionStr = point.direction !== null ? point.direction + "°" : "—";
-    const rangeStr = point.range !== null ? point.range + " м" : "—";
+            const title = point.title;
+            const description = point.description || "—";
+            const dateStr = point.entryDate || "—";
+            const sourceStr = point.source || "—";
+            const directionStr = point.direction !== null ? point.direction + "°" : "—";
+            const rangeStr = point.range !== null ? point.range + " м" : "—";
 
-    const fullInfo = `${title}\n${description}\n📅 ${dateStr} | 👤 ${sourceStr}\n🎯 Направление: ${directionStr} | Дальность: ${rangeStr}`;
-    const alertInfo = `${title}\n\nОписание: ${description}\n\nДата: ${dateStr}\nИсточник: ${sourceStr}\nНаправление: ${directionStr}\nДальность: ${rangeStr}`;
+            const fullInfo = `${title}\n${description}\n📅 ${dateStr} | 👤 ${sourceStr}\n🎯 Направление: ${directionStr} | Дальность: ${rangeStr}`;
+            const alertInfo = `${title}\n\nОписание: ${description}\n\nДата: ${dateStr}\nИсточник: ${sourceStr}\nНаправление: ${directionStr}\nДальность: ${rangeStr}`;
 
-    container.addEventListener('mouseenter', () => {
-        updateInfo(fullInfo);
-        icon.style.border = '3px solid #ff8888';
-        icon.style.transform = 'scale(1.05)';
-        container.style.transform = 'translate(-50%, -50%) scale(1.05)';
-    });
-    container.addEventListener('mouseleave', () => {
-        icon.style.border = '2px solid #ff4444';
-        icon.style.transform = 'scale(1)';
-        container.style.transform = 'translate(-50%, -50%) scale(1)';
-    });
-    container.addEventListener('click', (e) => {
-        e.stopPropagation();
-        updateInfo(fullInfo);
-        alert(alertInfo);
-        
-        selectedPoint = point;
-        const zoom = currentMap.zoom;
-        
-        // ДИАГНОСТИКА
-        console.log('===== ДИАГНОСТИКА КОНУСА =====');
-        console.log('Название:', point.title);
-        console.log('zoom:', zoom);
-        console.log('direction:', point.direction);
-        console.log('range:', point.range);
-        console.log('zoom >= 15?', zoom >= 15);
-        console.log('direction && range?', !!(point.direction && point.range && point.range > 0));
-        
-        if (zoom >= 15 && point.direction && point.range && point.range > 0) {
-            console.log('✅ Рисуем конус');
-            drawCone(currentMap, point.coordinates, point.direction, point.range);
-        } else {
-            console.log('❌ Условия НЕ выполнены для рисования конуса');
-            removeCone(currentMap);
+            container.addEventListener('mouseenter', () => {
+                updateInfo(fullInfo);
+                icon.style.border = '3px solid #ff8888';
+                icon.style.transform = 'scale(1.05)';
+                container.style.transform = 'translate(-50%, -50%) scale(1.05)';
+            });
+            container.addEventListener('mouseleave', () => {
+                icon.style.border = '2px solid #ff4444';
+                icon.style.transform = 'scale(1)';
+                container.style.transform = 'translate(-50%, -50%) scale(1)';
+            });
+            container.addEventListener('click', (e) => {
+                e.stopPropagation();
+                updateInfo(fullInfo);
+                alert(alertInfo);
+                
+                selectedPoint = point;
+                const zoom = currentMap.zoom;
+                
+                if (zoom >= 15 && point.direction && point.range && point.range > 0) {
+                    drawCone(currentMap, point.coordinates, point.direction, point.range);
+                } else {
+                    removeCone(currentMap);
+                }
+            });
+            return new ymaps3.YMapMarker({ coordinates: point.coordinates }, container);
         }
-    });
-    return new ymaps3.YMapMarker({ coordinates: point.coordinates }, container);
-}
 
         async function renderMap(points) {
             if (!currentMap) {
@@ -337,4 +334,4 @@ function createMarker(point) {
         start();
     </script>
 </body>
-/html>
+</html>
