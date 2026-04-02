@@ -86,7 +86,7 @@
             .btn { padding: 6px 12px; font-size: 11px; }
         }
     </style>
-</head>
+</head>вк
 <body>
     <div id="map"></div>
     <div class="loading" id="loadingStatus">🔄 Загрузка...</div>
@@ -144,45 +144,76 @@
             return [lng + dLng, lat + dLat];
         }
 
-        function drawSector(map, centerLngLat, direction, rangeMeters, coneAngleDeg = 40) {
-            const halfAngle = coneAngleDeg / 2;
-            const startAngle = direction - halfAngle;
-            const endAngle = direction + halfAngle;
-            
-            const points = [[centerLngLat[0], centerLngLat[1]]];
-            
-            const step = 5;
-            for (let angle = startAngle; angle <= endAngle; angle += step) {
-                const point = getPointAtDistance(centerLngLat[0], centerLngLat[1], angle, rangeMeters);
-                points.push([point[0], point[1]]);
-            }
-            
-            const lastPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], endAngle, rangeMeters);
-            points.push([lastPoint[0], lastPoint[1]]);
-            points.push([centerLngLat[0], centerLngLat[1]]);
-            
-            const geometry = {
-                type: 'Polygon',
-                coordinates: [points]
-            };
-            
-            try {
-                const sector = new ymaps3.YMapFeature({
-                    geometry: geometry,
-                    style: {
-                        fillColor: 'rgba(200, 100, 50, 0.35)',
-                        strokeColor: '#cc6633',
-                        strokeWidth: 1.5
-                    }
-                });
-                map.addChild(sector);
-                return sector;
-            } catch (error) {
-                console.error('Ошибка рисования сектора:', error);
-                return null;
-            }
+function drawSector(map, centerLngLat, direction, rangeMeters, coneAngleDeg = 40) {
+    const halfAngle = coneAngleDeg / 2;
+    
+    // Преобразуем навигационный азимут в математический для расчётов
+    function getMathAngle(azimuth) {
+        return (90 - azimuth + 360) % 360;
+    }
+    
+    const startMathAngle = getMathAngle(direction - halfAngle);
+    const endMathAngle = getMathAngle(direction + halfAngle);
+    
+    const points = [[centerLngLat[0], centerLngLat[1]]];
+    
+    // Рисуем дугу от startMathAngle до endMathAngle с учётом перехода через 0
+    let angle = startMathAngle;
+    const step = 5;
+    
+    // Обрабатываем случай, когда дуга пересекает 0 градусов
+    if (startMathAngle <= endMathAngle) {
+        for (let a = startMathAngle; a <= endMathAngle; a += step) {
+            const point = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], a, rangeMeters);
+            points.push([point[0], point[1]]);
         }
+    } else {
+        // Пересекает 0: идём до 360, потом от 0 до endMathAngle
+        for (let a = startMathAngle; a <= 360; a += step) {
+            const point = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], a, rangeMeters);
+            points.push([point[0], point[1]]);
+        }
+        for (let a = 0; a <= endMathAngle; a += step) {
+            const point = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], a, rangeMeters);
+            points.push([point[0], point[1]]);
+        }
+    }
+    
+    // Добавляем последнюю точку для замыкания
+    const lastPoint = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], endMathAngle, rangeMeters);
+    points.push([lastPoint[0], lastPoint[1]]);
+    points.push([centerLngLat[0], centerLngLat[1]]);
+    
+    const geometry = {
+        type: 'Polygon',
+        coordinates: [points]
+    };
+    
+    try {
+        const sector = new ymaps3.YMapFeature({
+            geometry: geometry,
+            style: {
+                fillColor: 'rgba(200, 100, 50, 0.35)',
+                strokeColor: '#cc6633',
+                strokeWidth: 1.5
+            }
+        });
+        map.addChild(sector);
+        return sector;
+    } catch (error) {
+        console.error('Ошибка рисования сектора:', error);
+        return null;
+    }
+}
 
+// Вспомогательная функция для математических углов
+function getPointAtDistanceMath(lng, lat, mathAngleDeg, meters) {
+    const rad = (mathAngleDeg * Math.PI) / 180;
+    const { latDeg, lngDeg } = metersToDegrees(meters, lat);
+    const dLat = Math.sin(rad) * latDeg;
+    const dLng = Math.cos(rad) * lngDeg;
+    return [lng + dLng, lat + dLat];
+}
         function removeAllCones() {
             if (!currentMap) return;
             currentCones.forEach(cone => {
