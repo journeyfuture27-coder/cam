@@ -29,18 +29,61 @@
             color: white; padding: 8px 16px; border-radius: 24px;
             font-size: 13px; z-index: 1000;
         }
-        .refresh-btn {
-            position: fixed; bottom: 20px; right: 20px;
-            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px);
-            color: white; width: 44px; height: 44px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; z-index: 1000; font-size: 20px;
-            transition: transform 0.2s; border: 1px solid rgba(255,255,255,0.2);
+        .control-buttons {
+            position: fixed;
+            bottom: 20px;
+            right: 80px;
+            display: flex;
+            gap: 10px;
+            z-index: 1000;
         }
-        .refresh-btn:hover { transform: rotate(90deg); background: rgba(0, 0, 0, 0.9); }
+        .btn {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            color: white;
+            padding: 10px 16px;
+            border-radius: 24px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: all 0.2s;
+            font-family: monospace;
+        }
+        .btn:hover {
+            background: rgba(0, 0, 0, 0.9);
+            transform: scale(1.02);
+        }
+        .btn.active {
+            background: #cc6633;
+            border-color: #ffaa66;
+        }
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            color: white;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            font-size: 20px;
+            transition: transform 0.2s;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .refresh-btn:hover {
+            transform: rotate(90deg);
+            background: rgba(0, 0, 0, 0.9);
+        }
         @media (max-width: 600px) {
             .info-panel { font-size: 12px; padding: 10px 16px; bottom: 15px; }
             .counter, .loading { font-size: 10px; padding: 6px 12px; }
+            .btn { padding: 6px 12px; font-size: 11px; }
         }
     </style>
 </head>
@@ -48,6 +91,9 @@
     <div id="map"></div>
     <div class="loading" id="loadingStatus">🔄 Загрузка...</div>
     <div class="counter" id="counter">📍 0</div>
+    <div class="control-buttons">
+        <div class="btn" id="toggleConesBtn">🔘 Показать конусы</div>
+    </div>
     <div class="refresh-btn" id="refreshBtn" title="Обновить данные">⟳</div>
     <div class="info-panel" id="infoPanel">📍 Наведите на маркер или кликните</div>
 
@@ -61,11 +107,13 @@
         let currentMarkers = [];
         let currentCones = [];
         let allPoints = [];
+        let conesVisible = false;
 
         const loadingDiv = document.getElementById('loadingStatus');
         const counterDiv = document.getElementById('counter');
         const infoPanel = document.getElementById('infoPanel');
         const refreshBtn = document.getElementById('refreshBtn');
+        const toggleConesBtn = document.getElementById('toggleConesBtn');
 
         function updateStatus(message, isError = false) {
             loadingDiv.innerHTML = isError ? `❌ ${message}` : `🔄 ${message}`;
@@ -135,9 +183,10 @@
             }
         }
 
-        function removeAllCones(map) {
+        function removeAllCones() {
+            if (!currentMap) return;
             currentCones.forEach(cone => {
-                try { map.removeChild(cone); } catch(e) {}
+                try { currentMap.removeChild(cone); } catch(e) {}
             });
             currentCones = [];
         }
@@ -145,17 +194,36 @@
         function drawAllCones() {
             if (!currentMap) return;
             
-            removeAllCones(currentMap);
+            removeAllCones();
             
-            const zoom = currentMap.zoom;
+            if (!conesVisible) return;
             
-            if (zoom >= 15) {
-                allPoints.forEach(point => {
-                    if (point.direction && point.range && point.range > 0) {
-                        const cone = drawSector(currentMap, point.coordinates, point.direction, point.range, 40);
-                        if (cone) currentCones.push(cone);
+            let drawnCount = 0;
+            allPoints.forEach(point => {
+                if (point.direction && point.range && point.range > 0) {
+                    const cone = drawSector(currentMap, point.coordinates, point.direction, point.range, 40);
+                    if (cone) {
+                        currentCones.push(cone);
+                        drawnCount++;
                     }
-                });
+                }
+            });
+            console.log(`Нарисовано конусов: ${drawnCount}`);
+            updateInfo(`🎯 Конусов: ${drawnCount} | Всего камер: ${allPoints.length}`);
+        }
+
+        function toggleCones() {
+            conesVisible = !conesVisible;
+            if (conesVisible) {
+                drawAllCones();
+                toggleConesBtn.innerHTML = '🔴 Скрыть конусы';
+                toggleConesBtn.classList.add('active');
+                updateInfo(`🎯 Конусы включены. Нарисовано: ${currentCones.length}`);
+            } else {
+                removeAllCones();
+                toggleConesBtn.innerHTML = '🔘 Показать конусы';
+                toggleConesBtn.classList.remove('active');
+                updateInfo(`🎯 Конусы скрыты`);
             }
         }
 
@@ -299,7 +367,10 @@
                 currentMarkers.push(marker);
             }
             
-            drawAllCones();
+            // Если конусы были включены — перерисовываем
+            if (conesVisible) {
+                drawAllCones();
+            }
             
             updateStatus(`✅ ${points.length} объектов на карте`);
         }
@@ -331,6 +402,7 @@
                 await initYandexAPI();
                 await loadAndDisplay();
                 refreshBtn.onclick = () => loadAndDisplay();
+                toggleConesBtn.onclick = () => toggleCones();
             } catch (error) {
                 console.error(error);
                 updateStatus('Ошибка инициализации', true);
