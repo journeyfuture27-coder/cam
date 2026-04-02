@@ -20,7 +20,6 @@
             height: 100%;
         }
         
-        /* Нижняя информационная панель */
         .info-panel {
             position: fixed;
             bottom: 20px;
@@ -39,8 +38,6 @@
             font-family: monospace;
             pointer-events: none;
             border: 1px solid rgba(255,255,255,0.2);
-            transition: all 0.2s ease;
-            word-break: break-word;
             white-space: pre-line;
             line-height: 1.4;
         }
@@ -55,7 +52,6 @@
             border-radius: 24px;
             font-size: 12px;
             z-index: 1000;
-            font-family: monospace;
         }
         .counter {
             position: fixed;
@@ -68,7 +64,6 @@
             border-radius: 24px;
             font-size: 13px;
             z-index: 1000;
-            font-family: monospace;
         }
         .refresh-btn {
             position: fixed;
@@ -107,73 +102,64 @@
     <div class="info-panel" id="infoPanel">📍 Наведите на маркер или кликните</div>
 
     <script>
-        // ==================== КОНФИГУРАЦИЯ ====================
         const YANDEX_API_KEY = '0c8158f3-19bb-4894-a380-7a632583d6d4';
-        
-        // Токен ТОЛЬКО ДЛЯ ЧТЕНИЯ
         const AIRTABLE_READ_TOKEN = 'patQti35eE2qFQYKK.fdd589ae9c5b728679a0bdc3f82fc98371601bb5b7b6310a10f4093f4219f8be';
-        
         const BASE_ID = 'appSQMpP8Kh4i466S';
         const TABLE_ID = 'tbl70cRzDcyF5l6po';
-        // ===================================================
-        
+
         let currentMap = null;
         let currentMarkers = [];
-        let currentCone = null;         // текущий нарисованный конус
-        let selectedPoint = null;        // выбранная камера (для зума)
-        
+        let currentCone = null;
+        let selectedPoint = null;
+
         const loadingDiv = document.getElementById('loadingStatus');
         const counterDiv = document.getElementById('counter');
         const infoPanel = document.getElementById('infoPanel');
         const refreshBtn = document.getElementById('refreshBtn');
-        
+
         function updateStatus(message, isError = false) {
             loadingDiv.innerHTML = isError ? `❌ ${message}` : `🔄 ${message}`;
             loadingDiv.style.background = isError ? 'rgba(220, 53, 69, 0.9)' : 'rgba(0, 0, 0, 0.7)';
             console.log(`[STATUS] ${message}`);
         }
-        
+
         function updateInfo(message, isError = false) {
             infoPanel.innerHTML = message;
             infoPanel.style.background = isError ? 'rgba(220, 53, 69, 0.9)' : 'rgba(0, 0, 0, 0.85)';
         }
-        
+
         function updateCount(count) {
             counterDiv.innerHTML = `📍 ${count}`;
         }
-        
-        // ========== ГЕОДЕЗИЧЕСКИЕ ФУНКЦИИ ДЛЯ КОНУСА ==========
-        // Переводит метры в градусы (приближённо, для малых расстояний до 1 км)
+
+        // Геодезические функции
         function metersToDegrees(meters, atLat) {
             const latDeg = meters / 111320;
             const lngDeg = meters / (111320 * Math.cos(atLat * Math.PI / 180));
             return { latDeg, lngDeg };
         }
-        
-        // Вычисляет точку на расстоянии meters по азимуту azimuth (градусы)
+
         function getPointAtDistance(lng, lat, azimuth, meters) {
             const rad = (azimuth * Math.PI) / 180;
             const { latDeg, lngDeg } = metersToDegrees(meters, lat);
-            
             const dLat = Math.sin(rad) * latDeg;
             const dLng = Math.cos(rad) * lngDeg;
-            
             return [lng + dLng, lat + dLat];
         }
-        
-        // Рисование конуса на карте
+
         function drawCone(map, centerLngLat, direction, rangeMeters) {
-            removeCone(map); // удаляем старый
-            
+            if (currentCone) {
+                map.removeChild(currentCone);
+                currentCone = null;
+            }
             if (!direction || !rangeMeters || rangeMeters <= 0) return;
-            
-            const coneAngle = 20; // половина угла обзора (всего 40°)
+
+            const coneAngle = 20;
             const leftAngle = direction - coneAngle;
             const rightAngle = direction + coneAngle;
-            
             const leftPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], leftAngle, rangeMeters);
             const rightPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], rightAngle, rangeMeters);
-            
+
             const polygonGeometry = {
                 type: 'Polygon',
                 coordinates: [[
@@ -183,7 +169,7 @@
                     [centerLngLat[0], centerLngLat[1]]
                 ]]
             };
-            
+
             const polygon = new ymaps3.YMapPolygon({
                 geometry: polygonGeometry,
                 style: {
@@ -192,19 +178,17 @@
                     strokeWidth: 2
                 }
             });
-            
             map.addChild(polygon);
             currentCone = polygon;
         }
-        
+
         function removeCone(map) {
             if (currentCone) {
                 map.removeChild(currentCone);
                 currentCone = null;
             }
         }
-        
-        // ========== ПАРСИНГ КООРДИНАТ ==========
+
         function parseCoordinates(coordString) {
             if (!coordString || typeof coordString !== 'string') return null;
             const cleaned = coordString.trim().replace(/\s/g, '');
@@ -217,13 +201,10 @@
             if (lng < -180 || lng > 180) return null;
             return [lng, lat];
         }
-        
-        // ========== ЗАГРУЗКА ДАННЫХ ИЗ AIRTABLE ==========
+
         async function fetchFromAirtable() {
             const url = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}?sort[0][field]=Name&sort[0][direction]=asc`;
-            
             updateStatus('Загрузка данных...');
-            
             try {
                 const response = await fetch(url, {
                     headers: {
@@ -231,21 +212,13 @@
                         'Content-Type': 'application/json'
                     }
                 });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
-                console.log('Airtable ответ:', data);
-                
                 const points = [];
-                
                 for (const record of data.records) {
                     const fields = record.fields;
                     const coordinatesRaw = fields['Coordinates'];
                     const coordinates = parseCoordinates(coordinatesRaw);
-                    
                     if (coordinates) {
                         points.push({
                             id: record.id,
@@ -257,34 +230,21 @@
                             direction: fields['Direction'] ? parseFloat(fields['Direction']) : null,
                             range: fields['Range'] ? parseFloat(fields['Range']) : null
                         });
-                        console.log(`✅ ${points[points.length-1].title}`);
-                    } else {
-                        console.warn(`⚠️ Пропущен: ${fields['Name'] || record.id} (координаты: "${coordinatesRaw}")`);
                     }
                 }
-                
-                console.log(`📊 Итого: ${points.length} из ${data.records.length} объектов`);
-                updateInfo(`📊 Загружено: ${points.length} объектов. Наведите на маркер.`);
+                updateInfo(`📊 Загружено: ${points.length} объектов`);
                 updateCount(points.length);
-                
                 return points;
-                
             } catch (error) {
-                console.error('Ошибка Airtable:', error);
+                console.error(error);
                 updateInfo(`❌ Ошибка: ${error.message}`, true);
                 return [];
             }
         }
-        
-        // ========== РАСЧЁТ ЦЕНТРА И МАСШТАБА ==========
+
         function calculateViewport(points) {
-            if (!points || points.length === 0) {
-                return { center: [37.573856, 55.751574], zoom: 10 };
-            }
-            
-            let minLng = Infinity, maxLng = -Infinity;
-            let minLat = Infinity, maxLat = -Infinity;
-            
+            if (!points || points.length === 0) return { center: [37.573856, 55.751574], zoom: 10 };
+            let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
             points.forEach(point => {
                 const [lng, lat] = point.coordinates;
                 minLng = Math.min(minLng, lng);
@@ -292,15 +252,8 @@
                 minLat = Math.min(minLat, lat);
                 maxLat = Math.max(maxLat, lat);
             });
-            
-            const centerLng = (minLng + maxLng) / 2;
-            const centerLat = (minLat + maxLat) / 2;
-            const center = [centerLng, centerLat];
-            
-            const lngDiff = maxLng - minLng;
-            const latDiff = maxLat - minLat;
-            const maxDiff = Math.max(lngDiff, latDiff);
-            
+            const center = [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
+            const maxDiff = Math.max(maxLng - minLng, maxLat - minLat);
             let zoom = 10;
             if (maxDiff <= 0.0005) zoom = 19;
             else if (maxDiff <= 0.001) zoom = 18;
@@ -315,95 +268,44 @@
             else if (maxDiff <= 1) zoom = 9;
             else if (maxDiff <= 2) zoom = 8;
             else zoom = 7;
-            
-            console.log(`📐 Масштаб: ${zoom}`);
             return { center, zoom };
         }
-        
-        // ========== СОЗДАНИЕ МАРКЕРА ==========
+
         function createMarker(point) {
             const container = document.createElement('div');
-            container.style.cssText = `
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                width: 38px;
-                height: 38px;
-                transform: translate(-50%, -50%);
-                cursor: pointer;
-                filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3));
-                transition: transform 0.2s;
-            `;
-            
+            container.style.cssText = `display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; transform: translate(-50%, -50%); cursor: pointer; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3)); transition: transform 0.2s;`;
             const icon = document.createElement('div');
             icon.innerHTML = '📹';
-            icon.style.cssText = `
-                font-size: 28px;
-                width: 38px;
-                height: 38px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                background: white;
-                border-radius: 50%;
-                border: 2px solid #ff4444;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-                transition: all 0.2s;
-            `;
-            
+            icon.style.cssText = `font-size: 28px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 50%; border: 2px solid #ff4444; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.2s;`;
             container.appendChild(icon);
-            
-            // Форматируем данные
-            const title = point.title;
-            const description = point.description || "—";
-            const dateStr = point.entryDate || "—";
-            const sourceStr = point.source || "—";
-            
-            const fullInfo = `${title}\n${description}\n📅 ${dateStr} | 👤 ${sourceStr}`;
-            
+            const fullInfo = `${point.title}\n${point.description || "—"}\n📅 ${point.entryDate || "—"} | 👤 ${point.source || "—"}`;
+
             container.addEventListener('mouseenter', () => {
                 updateInfo(fullInfo);
                 icon.style.border = '3px solid #ff8888';
                 icon.style.transform = 'scale(1.05)';
                 container.style.transform = 'translate(-50%, -50%) scale(1.05)';
             });
-            
             container.addEventListener('mouseleave', () => {
                 icon.style.border = '2px solid #ff4444';
                 icon.style.transform = 'scale(1)';
                 container.style.transform = 'translate(-50%, -50%) scale(1)';
             });
-            
             container.addEventListener('click', (e) => {
                 e.stopPropagation();
                 updateInfo(fullInfo);
-                alert(`${title}\n\nОписание: ${description}\n\nДата: ${dateStr}\nИсточник: ${sourceStr}`);
-                
-                // Сохраняем выбранную камеру
+                alert(`${point.title}\n\nОписание: ${point.description || "—"}\n\nДата: ${point.entryDate || "—"}\nИсточник: ${point.source || "—"}`);
                 selectedPoint = point;
-                
-                // Рисуем конус, если есть direction и range
-                if (point.direction && point.range && point.range > 0) {
-                    const zoom = currentMap.zoom;
-                    if (zoom >= 15) {
-                        drawCone(currentMap, point.coordinates, point.direction, point.range);
-                    } else {
-                        removeCone(currentMap);
-                    }
+                const zoom = currentMap.zoom;
+                if (zoom >= 15 && point.direction && point.range && point.range > 0) {
+                    drawCone(currentMap, point.coordinates, point.direction, point.range);
                 } else {
                     removeCone(currentMap);
                 }
             });
-            
-            const marker = new ymaps3.YMapMarker(
-                { coordinates: point.coordinates },
-                container
-            );
-            
-            return marker;
+            return new ymaps3.YMapMarker({ coordinates: point.coordinates }, container);
         }
-        
-        // ========== ОТРИСОВКА КАРТЫ ==========
+
         async function renderMap(points) {
             if (!currentMap) {
                 const viewport = calculateViewport(points);
@@ -412,10 +314,10 @@
                 });
                 currentMap.addChild(new ymaps3.YMapDefaultSchemeLayer());
                 currentMap.addChild(new ymaps3.YMapDefaultFeaturesLayer({ zIndex: 1800 }));
-                
-                // Подписываемся на изменение зума
-                currentMap.addEventListener('update', () => {
-                    const zoom = currentMap.zoom;
+
+                // Подписка на изменение зума через addEventListener (работает в API v3)
+                currentMap.addEventListener('update', (event) => {
+                    const zoom = event.location.zoom;
                     if (zoom < 15) {
                         removeCone(currentMap);
                     } else if (selectedPoint && selectedPoint.direction && selectedPoint.range && selectedPoint.range > 0) {
@@ -426,70 +328,50 @@
                 const viewport = calculateViewport(points);
                 currentMap.update({ location: { center: viewport.center, zoom: viewport.zoom } });
             }
-            
-            // Удаляем старые маркеры
-            currentMarkers.forEach(marker => {
-                if (marker && currentMap.removeChild) currentMap.removeChild(marker);
-            });
+
+            currentMarkers.forEach(m => currentMap.removeChild(m));
             currentMarkers = [];
-            
-            // Добавляем новые маркеры
             for (const point of points) {
                 const marker = createMarker(point);
                 currentMap.addChild(marker);
                 currentMarkers.push(marker);
             }
-            
-            window.pointsCount = points.length;
             updateStatus(`✅ ${points.length} объектов на карте`);
-            if (points.length > 0) {
-                updateInfo(`📍 ${points.length} объектов. Наведите на маркер для информации.`);
-            } else {
-                updateInfo(`⚠️ Нет объектов с координатами`, true);
-            }
         }
-        
-        // ========== ЗАГРУЗКА И ОБНОВЛЕНИЕ ==========
+
         async function loadAndDisplay() {
-            updateStatus('Загрузка данных...');
             const points = await fetchFromAirtable();
             if (points.length === 0) {
                 updateStatus('Нет данных', true);
-                updateInfo('⚠️ Объекты не найдены. Проверьте Airtable', true);
+                updateInfo('⚠️ Объекты не найдены', true);
                 return;
             }
             await renderMap(points);
         }
-        
-        // ========== ИНИЦИАЛИЗАЦИЯ ЯНДЕКС КАРТ ==========
+
         function initYandexAPI() {
             return new Promise((resolve, reject) => {
-                if (window.ymaps3) { resolve(); return; }
+                if (window.ymaps3) return resolve();
                 const script = document.createElement('script');
                 script.src = `https://api-maps.yandex.ru/v3/?apikey=${YANDEX_API_KEY}&lang=ru_RU`;
-                script.onload = () => { ymaps3.ready.then(resolve).catch(reject); };
-                script.onerror = () => reject(new Error('Не удалось загрузить API Яндекс.Карт'));
+                script.onload = () => ymaps3.ready.then(resolve).catch(reject);
+                script.onerror = () => reject(new Error('Ошибка загрузки API Яндекс.Карт'));
                 document.head.appendChild(script);
             });
         }
-        
-        // ========== ЗАПУСК ==========
+
         async function start() {
             updateStatus('Инициализация...');
             try {
                 await initYandexAPI();
                 await loadAndDisplay();
-                refreshBtn.onclick = () => {
-                    updateStatus('Обновление...');
-                    loadAndDisplay();
-                };
+                refreshBtn.onclick = () => loadAndDisplay();
             } catch (error) {
-                console.error('Ошибка:', error);
+                console.error(error);
                 updateStatus('Ошибка инициализации', true);
                 updateInfo(`❌ ${error.message}`, true);
             }
         }
-        
         start();
     </script>
 </body>
