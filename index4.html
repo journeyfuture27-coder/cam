@@ -19,7 +19,6 @@
             width: 100%;
             height: 100%;
         }
-        
         .info-panel {
             position: fixed;
             bottom: 20px;
@@ -149,7 +148,7 @@
 
         function drawCone(map, centerLngLat, direction, rangeMeters) {
             if (currentCone) {
-                map.removeChild(currentCone);
+                try { map.removeChild(currentCone); } catch(e) {}
                 currentCone = null;
             }
             if (!direction || !rangeMeters || rangeMeters <= 0) return;
@@ -184,7 +183,7 @@
 
         function removeCone(map) {
             if (currentCone) {
-                map.removeChild(currentCone);
+                try { map.removeChild(currentCone); } catch(e) {}
                 currentCone = null;
             }
         }
@@ -207,10 +206,7 @@
             updateStatus('Загрузка данных...');
             try {
                 const response = await fetch(url, {
-                    headers: {
-                        'Authorization': `Bearer ${AIRTABLE_READ_TOKEN}`,
-                        'Content-Type': 'application/json'
-                    }
+                    headers: { 'Authorization': `Bearer ${AIRTABLE_READ_TOKEN}`, 'Content-Type': 'application/json' }
                 });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
@@ -295,7 +291,11 @@
                 e.stopPropagation();
                 updateInfo(fullInfo);
                 alert(`${point.title}\n\nОписание: ${point.description || "—"}\n\nДата: ${point.entryDate || "—"}\nИсточник: ${point.source || "—"}`);
+                
+                // Сохраняем выбранную камеру
                 selectedPoint = point;
+                
+                // Получаем текущий зум и рисуем конус только если зум >= 15
                 const zoom = currentMap.zoom;
                 if (zoom >= 15 && point.direction && point.range && point.range > 0) {
                     drawCone(currentMap, point.coordinates, point.direction, point.range);
@@ -314,23 +314,18 @@
                 });
                 currentMap.addChild(new ymaps3.YMapDefaultSchemeLayer());
                 currentMap.addChild(new ymaps3.YMapDefaultFeaturesLayer({ zIndex: 1800 }));
-
-                // Подписка на изменение зума через addEventListener (работает в API v3)
-                currentMap.addEventListener('update', (event) => {
-                    const zoom = event.location.zoom;
-                    if (zoom < 15) {
-                        removeCone(currentMap);
-                    } else if (selectedPoint && selectedPoint.direction && selectedPoint.range && selectedPoint.range > 0) {
-                        drawCone(currentMap, selectedPoint.coordinates, selectedPoint.direction, selectedPoint.range);
-                    }
-                });
             } else {
                 const viewport = calculateViewport(points);
                 currentMap.update({ location: { center: viewport.center, zoom: viewport.zoom } });
             }
 
-            currentMarkers.forEach(m => currentMap.removeChild(m));
+            // Удаляем старые маркеры
+            currentMarkers.forEach(m => {
+                try { currentMap.removeChild(m); } catch(e) {}
+            });
             currentMarkers = [];
+            
+            // Добавляем новые маркеры
             for (const point of points) {
                 const marker = createMarker(point);
                 currentMap.addChild(marker);
