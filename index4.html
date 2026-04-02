@@ -137,56 +137,33 @@
             return { latDeg, lngDeg };
         }
 
-        // Получение точки по математическому углу (0° = восток, против часовой)
-        function getPointAtDistanceMath(lng, lat, mathAngleDeg, meters) {
-            const rad = (mathAngleDeg * Math.PI) / 180;
+        // Получение точки по направлению (0° = север, 90° = восток, 180° = юг, 270° = запад)
+        function getPointAtDistance(lng, lat, azimuth, meters) {
+            // Преобразуем навигационный азимут в математический угол
+            const mathAngle = (90 - azimuth + 360) % 360;
+            const rad = (mathAngle * Math.PI) / 180;
             const { latDeg, lngDeg } = metersToDegrees(meters, lat);
             const dLat = Math.sin(rad) * latDeg;
             const dLng = Math.cos(rad) * lngDeg;
             return [lng + dLng, lat + dLat];
         }
 
-        // Преобразование навигационного азимута в математический угол
-        function navToMathAngle(azimuth) {
-            return (90 - azimuth + 360) % 360;
-        }
-
+        // Рисование сектора (треугольник)
         function drawSector(map, centerLngLat, direction, rangeMeters, coneAngleDeg = 40) {
             const halfAngle = coneAngleDeg / 2;
             
-            const startNavAngle = direction - halfAngle;
-            const endNavAngle = direction + halfAngle;
+            const leftAngle = direction - halfAngle;
+            const rightAngle = direction + halfAngle;
             
-            const startMath = navToMathAngle(startNavAngle);
-            const endMath = navToMathAngle(endNavAngle);
+            const leftPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], leftAngle, rangeMeters);
+            const rightPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], rightAngle, rangeMeters);
             
-            // Начинаем с вершины
-            const points = [[centerLngLat[0], centerLngLat[1]]];
-            
-            const step = 5;
-            
-            // Добавляем точки дуги
-            if (startMath <= endMath) {
-                for (let a = startMath; a <= endMath; a += step) {
-                    const point = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], a, rangeMeters);
-                    points.push([point[0], point[1]]);
-                }
-            } else {
-                // Переход через 0 градусов
-                for (let a = startMath; a <= 360; a += step) {
-                    const point = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], a, rangeMeters);
-                    points.push([point[0], point[1]]);
-                }
-                for (let a = 0; a <= endMath; a += step) {
-                    const point = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], a, rangeMeters);
-                    points.push([point[0], point[1]]);
-                }
-            }
-            
-            // Добавляем последнюю точку дуги и замыкаем на вершину
-            const lastPoint = getPointAtDistanceMath(centerLngLat[0], centerLngLat[1], endMath, rangeMeters);
-            points.push([lastPoint[0], lastPoint[1]]);
-            points.push([centerLngLat[0], centerLngLat[1]]);
+            const points = [
+                [centerLngLat[0], centerLngLat[1]],
+                [leftPoint[0], leftPoint[1]],
+                [rightPoint[0], rightPoint[1]],
+                [centerLngLat[0], centerLngLat[1]]
+            ];
             
             const geometry = {
                 type: 'Polygon',
