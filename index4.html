@@ -1,47 +1,325 @@
-function createMarker(point) {
-    const container = document.createElement('div');
-    container.style.cssText = `display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; transform: translate(-50%, -50%); cursor: pointer; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3)); transition: transform 0.2s;`;
-    const icon = document.createElement('div');
-    icon.innerHTML = '📹';
-    icon.style.cssText = `font-size: 28px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 50%; border: 2px solid #ff4444; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.2s;`;
-    container.appendChild(icon);
-
-    // Данные для отображения
-    const title = point.title;
-    const description = point.description || "—";
-    const dateStr = point.entryDate || "—";
-    const sourceStr = point.source || "—";
-    const directionStr = point.direction !== null ? point.direction + "°" : "—";
-    const rangeStr = point.range !== null ? point.range + " м" : "—";
-
-    // Текст в нижней панели (добавляем Direction и Range)
-    const fullInfo = `${title}\n${description}\n📅 ${dateStr} | 👤 ${sourceStr}\n🎯 Направление: ${directionStr} | Дальность: ${rangeStr}`;
-    // Текст в alert
-    const alertInfo = `${title}\n\nОписание: ${description}\n\nДата: ${dateStr}\nИсточник: ${sourceStr}\nНаправление: ${directionStr}\nДальность: ${rangeStr}`;
-
-    container.addEventListener('mouseenter', () => {
-        updateInfo(fullInfo);
-        icon.style.border = '3px solid #ff8888';
-        icon.style.transform = 'scale(1.05)';
-        container.style.transform = 'translate(-50%, -50%) scale(1.05)';
-    });
-    container.addEventListener('mouseleave', () => {
-        icon.style.border = '2px solid #ff4444';
-        icon.style.transform = 'scale(1)';
-        container.style.transform = 'translate(-50%, -50%) scale(1)';
-    });
-    container.addEventListener('click', (e) => {
-        e.stopPropagation();
-        updateInfo(fullInfo);
-        alert(alertInfo);
-        
-        selectedPoint = point;
-        const zoom = currentMap.zoom;
-        if (zoom >= 15 && point.direction && point.range && point.range > 0) {
-            drawCone(currentMap, point.coordinates, point.direction, point.range);
-        } else {
-            removeCone(currentMap);
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Камеры на карте — конусы обзора</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; overflow: hidden; height: 100vh; }
+        #map { width: 100%; height: 100%; }
+        .info-panel {
+            position: fixed; bottom: 20px; left: 20px; right: 20px;
+            background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px);
+            color: white; padding: 14px 20px; border-radius: 16px;
+            font-size: 14px; z-index: 1000; text-align: left;
+            max-width: 420px; margin: 0 auto; font-family: monospace;
+            pointer-events: none; border: 1px solid rgba(255,255,255,0.2);
+            white-space: pre-line; line-height: 1.4;
         }
-    });
-    return new ymaps3.YMapMarker({ coordinates: point.coordinates }, container);
-}
+        .loading {
+            position: fixed; top: 20px; right: 20px;
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px);
+            color: #ffaa44; padding: 8px 16px; border-radius: 24px;
+            font-size: 12px; z-index: 1000;
+        }
+        .counter {
+            position: fixed; top: 20px; left: 20px;
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px);
+            color: white; padding: 8px 16px; border-radius: 24px;
+            font-size: 13px; z-index: 1000;
+        }
+        .refresh-btn {
+            position: fixed; bottom: 20px; right: 20px;
+            background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(8px);
+            color: white; width: 44px; height: 44px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; z-index: 1000; font-size: 20px;
+            transition: transform 0.2s; border: 1px solid rgba(255,255,255,0.2);
+        }
+        .refresh-btn:hover { transform: rotate(90deg); background: rgba(0, 0, 0, 0.9); }
+        @media (max-width: 600px) {
+            .info-panel { font-size: 12px; padding: 10px 16px; bottom: 15px; }
+            .counter, .loading { font-size: 10px; padding: 6px 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="loading" id="loadingStatus">🔄 Загрузка...</div>
+    <div class="counter" id="counter">📍 0</div>
+    <div class="refresh-btn" id="refreshBtn" title="Обновить данные">⟳</div>
+    <div class="info-panel" id="infoPanel">📍 Наведите на маркер или кликните</div>
+
+    <script>
+        const YANDEX_API_KEY = '0c8158f3-19bb-4894-a380-7a632583d6d4';
+        const AIRTABLE_READ_TOKEN = 'patQti35eE2qFQYKK.fdd589ae9c5b728679a0bdc3f82fc98371601bb5b7b6310a10f4093f4219f8be';
+        const BASE_ID = 'appSQMpP8Kh4i466S';
+        const TABLE_ID = 'tbl70cRzDcyF5l6po';
+
+        let currentMap = null;
+        let currentMarkers = [];
+        let currentCone = null;
+        let selectedPoint = null;
+
+        const loadingDiv = document.getElementById('loadingStatus');
+        const counterDiv = document.getElementById('counter');
+        const infoPanel = document.getElementById('infoPanel');
+        const refreshBtn = document.getElementById('refreshBtn');
+
+        function updateStatus(message, isError = false) {
+            loadingDiv.innerHTML = isError ? `❌ ${message}` : `🔄 ${message}`;
+            loadingDiv.style.background = isError ? 'rgba(220, 53, 69, 0.9)' : 'rgba(0, 0, 0, 0.7)';
+            console.log(`[STATUS] ${message}`);
+        }
+
+        function updateInfo(message, isError = false) {
+            infoPanel.innerHTML = message;
+            infoPanel.style.background = isError ? 'rgba(220, 53, 69, 0.9)' : 'rgba(0, 0, 0, 0.85)';
+        }
+
+        function updateCount(count) {
+            counterDiv.innerHTML = `📍 ${count}`;
+        }
+
+        // Геодезические функции
+        function metersToDegrees(meters, atLat) {
+            const latDeg = meters / 111320;
+            const lngDeg = meters / (111320 * Math.cos(atLat * Math.PI / 180));
+            return { latDeg, lngDeg };
+        }
+
+        function getPointAtDistance(lng, lat, azimuth, meters) {
+            const rad = (azimuth * Math.PI) / 180;
+            const { latDeg, lngDeg } = metersToDegrees(meters, lat);
+            const dLat = Math.sin(rad) * latDeg;
+            const dLng = Math.cos(rad) * lngDeg;
+            return [lng + dLng, lat + dLat];
+        }
+
+        function drawCone(map, centerLngLat, direction, rangeMeters) {
+            if (currentCone) {
+                try { map.removeChild(currentCone); } catch(e) {}
+                currentCone = null;
+            }
+            if (!direction || !rangeMeters || rangeMeters <= 0) return;
+
+            const coneAngle = 20;
+            const leftAngle = direction - coneAngle;
+            const rightAngle = direction + coneAngle;
+            const leftPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], leftAngle, rangeMeters);
+            const rightPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], rightAngle, rangeMeters);
+
+            const polygonGeometry = {
+                type: 'Polygon',
+                coordinates: [[
+                    [centerLngLat[0], centerLngLat[1]],
+                    [leftPoint[0], leftPoint[1]],
+                    [rightPoint[0], rightPoint[1]],
+                    [centerLngLat[0], centerLngLat[1]]
+                ]]
+            };
+
+            const polygon = new ymaps3.YMapPolygon({
+                geometry: polygonGeometry,
+                style: {
+                    fillColor: 'rgba(255, 50, 50, 0.25)',
+                    strokeColor: '#ff4444',
+                    strokeWidth: 2
+                }
+            });
+            map.addChild(polygon);
+            currentCone = polygon;
+        }
+
+        function removeCone(map) {
+            if (currentCone) {
+                try { map.removeChild(currentCone); } catch(e) {}
+                currentCone = null;
+            }
+        }
+
+        function parseCoordinates(coordString) {
+            if (!coordString || typeof coordString !== 'string') return null;
+            const cleaned = coordString.trim().replace(/\s/g, '');
+            const parts = cleaned.split(',');
+            if (parts.length !== 2) return null;
+            const lat = parseFloat(parts[0]);
+            const lng = parseFloat(parts[1]);
+            if (isNaN(lat) || isNaN(lng)) return null;
+            if (lat < -90 || lat > 90) return null;
+            if (lng < -180 || lng > 180) return null;
+            return [lng, lat];
+        }
+
+        async function fetchFromAirtable() {
+            const url = `https://api.airtable.com/v0/${BASE_ID}/${TABLE_ID}?sort[0][field]=Name&sort[0][direction]=asc`;
+            updateStatus('Загрузка данных...');
+            try {
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${AIRTABLE_READ_TOKEN}`, 'Content-Type': 'application/json' }
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const points = [];
+                for (const record of data.records) {
+                    const fields = record.fields;
+                    const coordinatesRaw = fields['Coordinates'];
+                    const coordinates = parseCoordinates(coordinatesRaw);
+                    if (coordinates) {
+                        points.push({
+                            id: record.id,
+                            coordinates: coordinates,
+                            title: fields['Name'] || 'Без названия',
+                            description: fields['Description'] || '',
+                            entryDate: fields['Entry Date'] || '',
+                            source: fields['Source'] || '',
+                            direction: fields['Direction'] ? parseFloat(fields['Direction']) : null,
+                            range: fields['Range'] ? parseFloat(fields['Range']) : null
+                        });
+                    }
+                }
+                updateInfo(`📊 Загружено: ${points.length} объектов`);
+                updateCount(points.length);
+                return points;
+            } catch (error) {
+                console.error(error);
+                updateInfo(`❌ Ошибка: ${error.message}`, true);
+                return [];
+            }
+        }
+
+        function calculateViewport(points) {
+            if (!points || points.length === 0) return { center: [37.573856, 55.751574], zoom: 10 };
+            let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+            points.forEach(point => {
+                const [lng, lat] = point.coordinates;
+                minLng = Math.min(minLng, lng);
+                maxLng = Math.max(maxLng, lng);
+                minLat = Math.min(minLat, lat);
+                maxLat = Math.max(maxLat, lat);
+            });
+            const center = [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
+            const maxDiff = Math.max(maxLng - minLng, maxLat - minLat);
+            let zoom = 10;
+            if (maxDiff <= 0.0005) zoom = 19;
+            else if (maxDiff <= 0.001) zoom = 18;
+            else if (maxDiff <= 0.002) zoom = 17;
+            else if (maxDiff <= 0.005) zoom = 16;
+            else if (maxDiff <= 0.01) zoom = 15;
+            else if (maxDiff <= 0.02) zoom = 14;
+            else if (maxDiff <= 0.05) zoom = 13;
+            else if (maxDiff <= 0.1) zoom = 12;
+            else if (maxDiff <= 0.2) zoom = 11;
+            else if (maxDiff <= 0.5) zoom = 10;
+            else if (maxDiff <= 1) zoom = 9;
+            else if (maxDiff <= 2) zoom = 8;
+            else zoom = 7;
+            return { center, zoom };
+        }
+
+        function createMarker(point) {
+            const container = document.createElement('div');
+            container.style.cssText = `display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; transform: translate(-50%, -50%); cursor: pointer; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3)); transition: transform 0.2s;`;
+            const icon = document.createElement('div');
+            icon.innerHTML = '📹';
+            icon.style.cssText = `font-size: 28px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; background: white; border-radius: 50%; border: 2px solid #ff4444; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.2s;`;
+            container.appendChild(icon);
+
+            const title = point.title;
+            const description = point.description || "—";
+            const dateStr = point.entryDate || "—";
+            const sourceStr = point.source || "—";
+            const directionStr = point.direction !== null ? point.direction + "°" : "—";
+            const rangeStr = point.range !== null ? point.range + " м" : "—";
+
+            const fullInfo = `${title}\n${description}\n📅 ${dateStr} | 👤 ${sourceStr}\n🎯 Направление: ${directionStr} | Дальность: ${rangeStr}`;
+            const alertInfo = `${title}\n\nОписание: ${description}\n\nДата: ${dateStr}\nИсточник: ${sourceStr}\nНаправление: ${directionStr}\nДальность: ${rangeStr}`;
+
+            container.addEventListener('mouseenter', () => {
+                updateInfo(fullInfo);
+                icon.style.border = '3px solid #ff8888';
+                icon.style.transform = 'scale(1.05)';
+                container.style.transform = 'translate(-50%, -50%) scale(1.05)';
+            });
+            container.addEventListener('mouseleave', () => {
+                icon.style.border = '2px solid #ff4444';
+                icon.style.transform = 'scale(1)';
+                container.style.transform = 'translate(-50%, -50%) scale(1)';
+            });
+            container.addEventListener('click', (e) => {
+                e.stopPropagation();
+                updateInfo(fullInfo);
+                alert(alertInfo);
+                
+                selectedPoint = point;
+                const zoom = currentMap.zoom;
+                if (zoom >= 15 && point.direction && point.range && point.range > 0) {
+                    drawCone(currentMap, point.coordinates, point.direction, point.range);
+                } else {
+                    removeCone(currentMap);
+                }
+            });
+            return new ymaps3.YMapMarker({ coordinates: point.coordinates }, container);
+        }
+
+        async function renderMap(points) {
+            if (!currentMap) {
+                const viewport = calculateViewport(points);
+                currentMap = new ymaps3.YMap(document.getElementById('map'), {
+                    location: { center: viewport.center, zoom: viewport.zoom }
+                });
+                currentMap.addChild(new ymaps3.YMapDefaultSchemeLayer());
+                currentMap.addChild(new ymaps3.YMapDefaultFeaturesLayer({ zIndex: 1800 }));
+            } else {
+                const viewport = calculateViewport(points);
+                currentMap.update({ location: { center: viewport.center, zoom: viewport.zoom } });
+            }
+
+            currentMarkers.forEach(m => { try { currentMap.removeChild(m); } catch(e) {} });
+            currentMarkers = [];
+            for (const point of points) {
+                const marker = createMarker(point);
+                currentMap.addChild(marker);
+                currentMarkers.push(marker);
+            }
+            updateStatus(`✅ ${points.length} объектов на карте`);
+        }
+
+        async function loadAndDisplay() {
+            const points = await fetchFromAirtable();
+            if (points.length === 0) {
+                updateStatus('Нет данных', true);
+                updateInfo('⚠️ Объекты не найдены', true);
+                return;
+            }
+            await renderMap(points);
+        }
+
+        function initYandexAPI() {
+            return new Promise((resolve, reject) => {
+                if (window.ymaps3) return resolve();
+                const script = document.createElement('script');
+                script.src = `https://api-maps.yandex.ru/v3/?apikey=${YANDEX_API_KEY}&lang=ru_RU`;
+                script.onload = () => ymaps3.ready.then(resolve).catch(reject);
+                script.onerror = () => reject(new Error('Ошибка загрузки API Яндекс.Карт'));
+                document.head.appendChild(script);
+            });
+        }
+
+        async function start() {
+            updateStatus('Инициализация...');
+            try {
+                await initYandexAPI();
+                await loadAndDisplay();
+                refreshBtn.onclick = () => loadAndDisplay();
+            } catch (error) {
+                console.error(error);
+                updateStatus('Ошибка инициализации', true);
+                updateInfo(`❌ ${error.message}`, true);
+            }
+        }
+        start();
+    </script>
+</body>
+</html>
