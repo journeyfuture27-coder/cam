@@ -59,9 +59,8 @@
 
         let currentMap = null;
         let currentMarkers = [];
-        let currentCones = []; // массив всех конусов
-        let currentZoom = 10;
-        let allPoints = []; // храним все точки для перерисовки конусов
+        let currentCones = [];
+        let allPoints = [];
 
         const loadingDiv = document.getElementById('loadingStatus');
         const counterDiv = document.getElementById('counter');
@@ -83,7 +82,6 @@
             counterDiv.innerHTML = `📍 ${count}`;
         }
 
-        // Геодезические функции
         function metersToDegrees(meters, atLat) {
             const latDeg = meters / 111320;
             const lngDeg = meters / (111320 * Math.cos(atLat * Math.PI / 180));
@@ -98,25 +96,21 @@
             return [lng + dLng, lat + dLat];
         }
 
-        // Рисование сектора (части круга) — используем 8 точек для плавности
         function drawSector(map, centerLngLat, direction, rangeMeters, coneAngleDeg = 40) {
             const halfAngle = coneAngleDeg / 2;
             const startAngle = direction - halfAngle;
             const endAngle = direction + halfAngle;
             
-            // Создаём точки сектора: вершина + точки по дуге
             const points = [[centerLngLat[0], centerLngLat[1]]];
             
-            // Рисуем дугу с шагом 5 градусов для плавности
             const step = 5;
             for (let angle = startAngle; angle <= endAngle; angle += step) {
                 const point = getPointAtDistance(centerLngLat[0], centerLngLat[1], angle, rangeMeters);
                 points.push([point[0], point[1]]);
             }
-            // Добавляем последнюю точку для замыкания
+            
             const lastPoint = getPointAtDistance(centerLngLat[0], centerLngLat[1], endAngle, rangeMeters);
             points.push([lastPoint[0], lastPoint[1]]);
-            // Замыкаем обратно к вершине
             points.push([centerLngLat[0], centerLngLat[1]]);
             
             const geometry = {
@@ -128,7 +122,7 @@
                 const sector = new ymaps3.YMapFeature({
                     geometry: geometry,
                     style: {
-                        fillColor: 'rgba(200, 100, 50, 0.35)', // бледно-коричневый, полупрозрачный
+                        fillColor: 'rgba(200, 100, 50, 0.35)',
                         strokeColor: '#cc6633',
                         strokeWidth: 1.5
                     }
@@ -141,7 +135,6 @@
             }
         }
 
-        // Удаление всех конусов
         function removeAllCones(map) {
             currentCones.forEach(cone => {
                 try { map.removeChild(cone); } catch(e) {}
@@ -149,22 +142,20 @@
             currentCones = [];
         }
 
-        // Показать конусы для всех камер, если зум достаточно большой
-        function showConesForZoom(zoom) {
+        function drawAllCones() {
             if (!currentMap) return;
             
             removeAllCones(currentMap);
             
+            const zoom = currentMap.zoom;
+            
             if (zoom >= 15) {
-                console.log(`🎨 Зум ${zoom} >= 15, показываем конусы для ${allPoints.length} камер`);
                 allPoints.forEach(point => {
                     if (point.direction && point.range && point.range > 0) {
                         const cone = drawSector(currentMap, point.coordinates, point.direction, point.range, 40);
                         if (cone) currentCones.push(cone);
                     }
                 });
-            } else {
-                console.log(`Зум ${zoom} < 15, конусы скрыты`);
             }
         }
 
@@ -285,7 +276,7 @@
         }
 
         async function renderMap(points) {
-            allPoints = points; // сохраняем для перерисовки конусов
+            allPoints = points;
             
             if (!currentMap) {
                 const viewport = calculateViewport(points);
@@ -294,33 +285,21 @@
                 });
                 currentMap.addChild(new ymaps3.YMapDefaultSchemeLayer());
                 currentMap.addChild(new ymaps3.YMapDefaultFeaturesLayer({ zIndex: 1800 }));
-                
-                // Подписываемся на изменение зума
-                currentMap.addEventListener('update', (event) => {
-                    const newZoom = event.location.zoom;
-                    currentZoom = newZoom;
-                    showConesForZoom(newZoom);
-                });
             } else {
                 const viewport = calculateViewport(points);
                 currentMap.update({ location: { center: viewport.center, zoom: viewport.zoom } });
             }
 
-            // Удаляем старые маркеры
             currentMarkers.forEach(m => { try { currentMap.removeChild(m); } catch(e) {} });
             currentMarkers = [];
             
-            // Добавляем новые маркеры
             for (const point of points) {
                 const marker = createMarker(point);
                 currentMap.addChild(marker);
                 currentMarkers.push(marker);
             }
             
-            // Показываем конусы в зависимости от текущего зума
-            const currentZoomValue = currentMap.zoom;
-            currentZoom = currentZoomValue;
-            showConesForZoom(currentZoomValue);
+            drawAllCones();
             
             updateStatus(`✅ ${points.length} объектов на карте`);
         }
